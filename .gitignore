@@ -1,0 +1,17 @@
+# Node Modules dependencies tracking omissions
+node_modules/
+dist/
+.env
+
+# Mobile specific cache exclusions files tracking
+.expo/
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+
+# Application diagnostic generation logs tracking
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*

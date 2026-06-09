@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { 
   StyleSheet, 
   Text, 
@@ -8,7 +8,8 @@ import {
   ScrollView, 
   SafeAreaView,
   Alert,
-  Switch
+  Switch,
+  ActivityIndicator
 } from 'react-native';
 
 interface UserSession {
@@ -37,6 +38,7 @@ interface RideMatch {
 
 interface SpatialSuggestion {
   displayName: string;
+  fullAddress: string;
   lat: string;
   lon: string;
 }
@@ -44,36 +46,36 @@ interface SpatialSuggestion {
 export default function App() {
   const [currentScreen, setCurrentScreen] = useState<'LOGIN' | 'OTP_CHECK' | 'DASHBOARD' | 'OFFER' | 'FIND'>('LOGIN');
   const [currentUser, setCurrentUser] = useState<UserSession | null>(null);
+  const [globalLoading, setGlobalLoading] = useState(false);
 
-  // Authentication Fields Data States
+  // Authentication states
   const [loginEmail, setLoginEmail] = useState('');
   const [loginName, setLoginName] = useState('');
   const [loginGender, setLoginGender] = useState('female');
   const [enteredOtp, setEnteredOtp] = useState('');
   const [debugCodeHint, setDebugCodeHint] = useState('');
 
-  // Location suggestions array maps states
+  // Dropdown Autocomplete suggestion states
   const [originSuggestions, setOriginSuggestions] = useState<SpatialSuggestion[]>([]);
   const [destSuggestions, setDestSuggestions] = useState<SpatialSuggestion[]>([]);
   const [activeInputContext, setActiveInputContext] = useState<'OFFER_ORIGIN' | 'OFFER_DEST' | 'SEARCH_ORIGIN' | 'SEARCH_DEST' | null>(null);
 
-  // Offer Creation States
+  // Offer parameters
   const [offerOrigin, setOfferOrigin] = useState('');
   const [offerDestination, setOfferDestination] = useState('');
   const [offerTime, setOfferTime] = useState('');
   const [offerSeats, setOfferSeats] = useState('3');
-  const [offerPrice, setOfferPrice] = useState('120');
+  const [offerPrice, setOfferPrice] = useState('150');
   const [optSilent, setOptSilent] = useState(false);
   const [optWomenOnly, setOptWomenOnly] = useState(false);
 
-  // Search/Discovery System States
+  // Search variables
   const [searchOrigin, setSearchOrigin] = useState('');
   const [searchDestination, setSearchDestination] = useState('');
   const [searchResults, setSearchResults] = useState<RideMatch[]>([]);
 
   const API_URL = 'http://localhost:3000/api';
 
-  // Live Location Autocomplete Controller Hook implementation
   const triggerLocationSearch = async (text: string, context: 'ORIGIN' | 'DEST') => {
     if (context === 'ORIGIN') {
       if (activeInputContext === 'OFFER_ORIGIN') setOfferOrigin(text);
@@ -95,16 +97,15 @@ export default function App() {
       if (context === 'ORIGIN') setOriginSuggestions(data.suggestions || []);
       if (context === 'DEST') setDestSuggestions(data.suggestions || []);
     } catch {
-      console.log('Location autocomplete server communication offline.');
+      console.log('Map server unreachable.');
     }
   };
 
-  const handleSelectLocation = (displayName: string, context: 'OFFER_ORIGIN' | 'OFFER_DEST' | 'SEARCH_ORIGIN' | 'SEARCH_DEST') => {
-    const shortenedName = displayName.split(',')[0] + ', ' + displayName.split(',')[1];
-    if (context === 'OFFER_ORIGIN') setOfferOrigin(shortenedName);
-    if (context === 'OFFER_DEST') setOfferDestination(shortenedName);
-    if (context === 'SEARCH_ORIGIN') setSearchOrigin(shortenedName);
-    if (context === 'SEARCH_DEST') setSearchDestination(shortenedName);
+  const handleSelectLocation = (item: SpatialSuggestion, context: 'OFFER_ORIGIN' | 'OFFER_DEST' | 'SEARCH_ORIGIN' | 'SEARCH_DEST') => {
+    if (context === 'OFFER_ORIGIN') setOfferOrigin(item.displayName);
+    if (context === 'OFFER_DEST') setOfferDestination(item.displayName);
+    if (context === 'SEARCH_ORIGIN') setSearchOrigin(item.displayName);
+    if (context === 'SEARCH_DEST') setSearchDestination(item.displayName);
     
     setOriginSuggestions([]);
     setDestSuggestions([]);
@@ -113,9 +114,10 @@ export default function App() {
 
   const handleCorporateHandshake = async () => {
     if (!loginEmail || !loginName) {
-      Alert.alert('Missing Parameters', 'Please fill out all registration items.');
+      Alert.alert('Action Required', 'Please supply your operational name and corporate network address.');
       return;
     }
+    setGlobalLoading(true);
     try {
       const response = await fetch(`${API_URL}/auth/corporate-verify`, {
         method: 'POST',
@@ -128,11 +130,15 @@ export default function App() {
       setDebugCodeHint(data.debugOtpConfirmationCode || '');
       setCurrentScreen('OTP_CHECK');
     } catch (err: any) {
-      Alert.alert('Verification Error', err.message || 'Server connection failed.');
+      Alert.alert('Access Error', err.message || 'Verification initialization rejected.');
+    } finally {
+      setGlobalLoading(false);
     }
   };
 
   const verifyOtpTokenCode = async () => {
+    if (!enteredOtp) return;
+    setGlobalLoading(true);
     try {
       const response = await fetch(`${API_URL}/auth/confirm-otp`, {
         method: 'POST',
@@ -145,15 +151,18 @@ export default function App() {
       setCurrentUser(data.user);
       setCurrentScreen('DASHBOARD');
     } catch (err: any) {
-      Alert.alert('Access Denied', err.message || 'OTP validation operation failed.');
+      Alert.alert('Token Invalid', err.message || 'OTP check handshake failure.');
+    } finally {
+      setGlobalLoading(false);
     }
   };
 
   const dispatchOfferSubmission = async () => {
     if (!offerOrigin || !offerDestination || !offerTime) {
-      Alert.alert('Error', 'Please provide clean geolocation route indices parameters.');
+      Alert.alert('Details Missing', 'Please pin valid start and end path points.');
       return;
     }
+    setGlobalLoading(true);
     try {
       const response = await fetch(`${API_URL}/rides/offer`, {
         method: 'POST',
@@ -170,29 +179,34 @@ export default function App() {
         })
       });
       if (!response.ok) throw new Error();
-      Alert.alert('Route Active', 'Your carpool offering route is now active globally.');
+      Alert.alert('Route Registered', 'Your pool route has been successfully mapped out.');
       setCurrentScreen('DASHBOARD');
+      // Reset inputs
+      setOfferOrigin(''); setOfferDestination(''); setOfferTime('');
     } catch {
-      Alert.alert('Network Issue', 'Failed to synchronize route configuration parameters to cluster.');
+      Alert.alert('Error', 'Failed to upload route criteria metrics.');
+    } finally {
+      setGlobalLoading(false);
     }
   };
 
   const executeRouteSearchQuery = async () => {
+    setGlobalLoading(true);
     try {
       const response = await fetch(
-        `${API_URL}/rides/search?origin=${searchOrigin}&destination=${searchDestination}&riderId=${currentUser?.id}`
+        `${API_URL}/rides/search?origin=${encodeURIComponent(searchOrigin)}&destination=${encodeURIComponent(searchDestination)}&riderId=${currentUser?.id}`
       );
       const data = await response.json();
       setSearchResults(data.rides || []);
-      if ((data.rides || []).length === 0) {
-        Alert.alert('No Matches', 'No active rides match your routing or profile rules right now.');
-      }
     } catch {
-      Alert.alert('Search Failure', 'API communication error during spatial vector scan mapping queries.');
+      Alert.alert('Search Offline', 'Could not index matching paths.');
+    } finally {
+      setGlobalLoading(false);
     }
   };
 
   const processBookingTransaction = async (rideId: string) => {
+    setGlobalLoading(true);
     try {
       const response = await fetch(`${API_URL}/rides/book`, {
         method: 'POST',
@@ -202,58 +216,81 @@ export default function App() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
       
-      Alert.alert('Pact Secured!', `Transaction completed. Give your driver code: ${data.booking.verificationPasscode}`);
+      Alert.alert('Pact Confirmed!', `Seat reserved safely. Boarding Code: ${data.booking.verificationPasscode}`);
       setCurrentScreen('DASHBOARD');
     } catch (err: any) {
-      Alert.alert('Booking Aborted', err.message || 'Internal ledger synchronization failure.');
+      Alert.alert('Booking Error', err.message || 'Transaction could not be initialized.');
+    } finally {
+      setGlobalLoading(false);
     }
   };
 
   return (
     <SafeAreaView style={styles.appContainer}>
+      {/* Top Banner Navigation Header */}
       <View style={styles.appHeader}>
-        <Text style={styles.brandTitleText}>🤝 PACT</Text>
+        <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+          <Text style={styles.logoBadgeEmoji}>🤝</Text>
+          <View>
+            <Text style={styles.brandTitleText}>PACT</Text>
+            <Text style={styles.subBrandTagline}>Enterprise Network Mesh</Text>
+          </View>
+        </View>
         {currentUser && (
-          <Text style={styles.userBadgeText}>
-            {currentUser.name} • <Text style={{ color: '#10B981' }}>{currentUser.company}</Text>
-          </Text>
+          <View style={styles.userProfilePillBadge}>
+            <Text style={styles.userBadgeTextText}>{currentUser.name}</Text>
+            <Text style={styles.companySubLabel}>{currentUser.company}</Text>
+          </View>
         )}
       </View>
+
+      {/* Global Activity Loader */}
+      {globalLoading && (
+        <View style={styles.systemGlobalLoaderTrack}>
+          <ActivityIndicator size="large" color="#10B981" />
+        </View>
+      )}
 
       <ScrollView contentContainerStyle={styles.screenScrollLayout} keyboardShouldPersistTaps="handled">
         {currentScreen === 'LOGIN' && (
           <View style={styles.cardUIElement}>
-            <Text style={styles.sectionHeaderLabelText}>Enterprise Access Gateway</Text>
-            <Text style={styles.supportingHelperBodyText}>Enter your details and a secure corporate domain email (e.g., mail@techcorp.com, work@google.com, test@pact.com).</Text>
+            <Text style={styles.sectionHeaderLabelText}>Corporate Identity Authentication</Text>
+            <Text style={styles.supportingHelperBodyText}>Access verification requires a valid, corporate enterprise email address.</Text>
             
-            <TextInput style={styles.formTextInputField} placeholder="Full Legal Name" value={loginName} onChangeText={setLoginName} />
-            <TextInput style={styles.formTextInputField} placeholder="corporate@company.com" value={loginEmail} onChangeText={setLoginEmail} autoCapitalize="none" keyboardType="email-address" />
+            <Text style={styles.inputElementHeaderTitleLabel}>Legal Full Name</Text>
+            <TextInput style={styles.formTextInputField} placeholder="e.g. Ramesh Kumar" placeholderTextColor="#9CA3AF" value={loginName} onChangeText={setLoginName} />
             
-            <View style={{ flexDirection: 'row', justifyContent: 'space-around', marginVertical: 12 }}>
+            <Text style={styles.inputElementHeaderTitleLabel}>Enterprise Email Domain Address</Text>
+            <TextInput style={styles.formTextInputField} placeholder="e.g. ramesh@google.com" placeholderTextColor="#9CA3AF" value={loginEmail} onChangeText={setLoginEmail} autoCapitalize="none" keyboardType="email-address" />
+            
+            <Text style={styles.inputElementHeaderTitleLabel}>Select Profile Verification Track</Text>
+            <View style={styles.segmentedTabContainerGroupRow}>
               <TouchableOpacity style={[styles.genderSelectChipTab, loginGender === 'female' && styles.genderSelectChipTabSelected]} onPress={() => setLoginGender('female')}>
-                <Text style={loginGender === 'female' ? styles.chipTextSelected : styles.chipTextUnselected}>Female Profile</Text>
+                <Text style={loginGender === 'female' ? styles.chipTextSelected : styles.chipTextUnselected}>Female Route Preference</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.genderSelectChipTab, loginGender === 'male' && styles.genderSelectChipTabSelected]} onPress={() => setLoginGender('male')}>
-                <Text style={loginGender === 'male' ? styles.chipTextSelected : styles.chipTextUnselected}>Male Profile</Text>
+                <Text style={loginGender === 'male' ? styles.chipTextSelected : styles.chipTextUnselected}>Standard General Route</Text>
               </TouchableOpacity>
             </View>
 
             <TouchableOpacity style={styles.actionExecutionButton} onPress={handleCorporateHandshake}>
-              <Text style={styles.actionButtonLabelText}>Request Access Token</Text>
+              <Text style={styles.actionButtonLabelText}>Initialize Network Handshake</Text>
             </TouchableOpacity>
           </View>
         )}
 
         {currentScreen === 'OTP_CHECK' && (
           <View style={styles.cardUIElement}>
-            <Text style={styles.sectionHeaderLabelText}>Confirm Secure Token Code</Text>
-            <Text style={styles.supportingHelperBodyText}>A verification token was logged to the cluster terminal core.</Text>
-            {debugCodeHint ? <Text style={styles.debugTerminalCodeHint}>Development Test Code Bypass Value: {debugCodeHint}</Text> : null}
+            <Text style={styles.sectionHeaderLabelText}>Verify Security Token</Text>
+            <Text style={styles.supportingHelperBodyText}>A security token payload handshake has been executed and logged inside the backend cluster module window.</Text>
             
-            <TextInput style={styles.formTextInputField} placeholder="Enter 4-Digit Pin Code" keyboardType="numeric" maxLength={4} value={enteredOtp} onChangeText={setEnteredOtp} />
+            {debugCodeHint ? <View style={styles.debugTerminalCodeHint}><Text style={styles.debugTokenLabelTextText}>Bypass Pin: {debugCodeHint}</Text></View> : null}
+            
+            <Text style={styles.inputElementHeaderTitleLabel}>Enter 4-Digit Verification Key</Text>
+            <TextInput style={[styles.formTextInputField, styles.otpCenterInputTextAlignment]} placeholder="0 0 0 0" placeholderTextColor="#6B7280" keyboardType="numeric" maxLength={4} value={enteredOtp} onChangeText={setEnteredOtp} />
             
             <TouchableOpacity style={styles.actionExecutionButton} onPress={verifyOtpTokenCode}>
-              <Text style={styles.actionButtonLabelText}>Validate Security Profile</Text>
+              <Text style={styles.actionButtonLabelText}>Authenticate Profile Signature</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -261,17 +298,26 @@ export default function App() {
         {currentScreen === 'DASHBOARD' && (
           <View style={{ width: '100%' }}>
             <View style={styles.greenMetricImpactContainerBox}>
-              <Text style={{ color: '#fff', fontSize: 14 }}>Eco-Impact Footprint Ledger</Text>
-              <Text style={{ color: '#fff', fontSize: 28, fontWeight: '700', marginVertical: 4 }}>14.2 kg CO₂ Saved</Text>
-              <Text style={{ color: '#A7F3D0', fontSize: 12 }}>Pact Identity Tier Level: Carbon Catalyst Silver</Text>
+              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                <Text style={{ color: '#E0F2FE', fontSize: 13, fontWeight: '600', letterSpacing: 0.5 }}>CO₂ OFFSET MATRIX LAYER</Text>
+                <Text style={styles.activeVerifiedStatusBadgeMarkerText}>Verified Profile Node</Text>
+              </View>
+              <Text style={{ color: '#fff', fontSize: 36, fontWeight: '800', marginVertical: 8 }}>14.2 kg</Text>
+              <Text style={{ color: '#A7F3D0', fontSize: 13, fontWeight: '500' }}>Carbon Catalyst Tier Level: Silver Core</Text>
             </View>
 
-            <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginVertical: 20 }}>
-              <TouchableOpacity style={[styles.actionExecutionButton, { flex: 1, marginRight: 8 }]} onPress={() => { setSearchResults([]); setCurrentScreen('FIND'); }}>
-                <Text style={styles.actionButtonLabelText}>Find Carpool</Text>
+            <Text style={styles.dashboardSectionBreakHeaderLabel}>Network Action Routing Panels</Text>
+            <View style={styles.dashboardActionButtonsGroupContainer}>
+              <TouchableOpacity style={styles.dashboardActionBigFunctionalMenuCardButton} onPress={() => { setSearchResults([]); setCurrentScreen('FIND'); }}>
+                <Text style={styles.bigCardFunctionalMenuIconButtonEmoji}>🔍</Text>
+                <Text style={styles.bigCardMainActionButtonTextLabel}>Find Commute</Text>
+                <Text style={styles.bigCardSubDescriptionHelperText}>Scan matching verified corporate routes</Text>
               </TouchableOpacity>
-              <TouchableOpacity style={[styles.actionExecutionButton, { flex: 1, marginLeft: 8, backgroundColor: '#4B5563' }]} onPress={() => setCurrentScreen('OFFER')}>
-                <Text style={styles.actionButtonLabelText}>Offer Ride</Text>
+
+              <TouchableOpacity style={[styles.dashboardActionBigFunctionalMenuCardButton, { backgroundColor: '#1E293B' }]} onPress={() => setCurrentScreen('OFFER')}>
+                <Text style={styles.bigCardFunctionalMenuIconButtonEmoji}>🚗</Text>
+                <Text style={styles.bigCardMainActionButtonTextLabel}>Offer Commute</Text>
+                <Text style={styles.bigCardSubDescriptionHelperText}>Publish active available empty vehicle inventory</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -279,50 +325,71 @@ export default function App() {
 
         {currentScreen === 'OFFER' && (
           <View style={styles.cardUIElement}>
-            <Text style={styles.sectionHeaderLabelText}>Publish Active Commute Route</Text>
+            <Text style={styles.sectionHeaderLabelText}>Publish Active Pool Route</Text>
+            <Text style={styles.supportingHelperBodyText}>Configure route bounds. System autocompletion scans Indian city data maps dynamically.</Text>
             
+            <Text style={styles.inputElementHeaderTitleLabel}>Departure Origin Station Point</Text>
             <TextInput 
               style={styles.formTextInputField} 
-              placeholder="Origin: Type at least 3 letters..." 
+              placeholder="e.g. Provident Kenworth..." 
+              placeholderTextColor="#9CA3AF"
               value={offerOrigin} 
               onFocus={() => setActiveInputContext('OFFER_ORIGIN')}
               onChangeText={(t) => triggerLocationSearch(t, 'ORIGIN')} 
             />
             {activeInputContext === 'OFFER_ORIGIN' && originSuggestions.map((item, i) => (
-              <TouchableOpacity key={i} style={styles.autocompleteSuggestionRowTouch} onPress={() => handleSelectLocation(item.displayName, 'OFFER_ORIGIN')}>
+              <TouchableOpacity key={i} style={styles.autocompleteSuggestionRowTouch} onPress={() => handleSelectLocation(item, 'OFFER_ORIGIN')}>
                 <Text style={styles.autocompleteRowLabelText} numberOfLines={1}>📍 {item.displayName}</Text>
               </TouchableOpacity>
             ))}
 
+            <Text style={styles.inputElementHeaderTitleLabel}>Target Destination Base Terminal</Text>
             <TextInput 
               style={styles.formTextInputField} 
-              placeholder="Destination: Type at least 3 letters..." 
+              placeholder="e.g. Gachibowli Tech Park..." 
+              placeholderTextColor="#9CA3AF"
               value={offerDestination} 
               onFocus={() => setActiveInputContext('OFFER_DEST')}
               onChangeText={(t) => triggerLocationSearch(t, 'DEST')} 
             />
             {activeInputContext === 'OFFER_DEST' && destSuggestions.map((item, i) => (
-              <TouchableOpacity key={i} style={styles.autocompleteSuggestionRowTouch} onPress={() => handleSelectLocation(item.displayName, 'OFFER_DEST')}>
+              <TouchableOpacity key={i} style={styles.autocompleteSuggestionRowTouch} onPress={() => handleSelectLocation(item, 'OFFER_DEST')}>
                 <Text style={styles.autocompleteRowLabelText} numberOfLines={1}>🏁 {item.displayName}</Text>
               </TouchableOpacity>
             ))}
 
-            <TextInput style={styles.formTextInputField} placeholder="Departure Timing (e.g., 09:00 AM)" value={offerTime} onChangeText={setOfferTime} />
-            <TextInput style={styles.formTextInputField} placeholder="Seats Available" keyboardType="numeric" value={offerSeats} onChangeText={setOfferSeats} />
-            <TextInput style={styles.formTextInputField} placeholder="Fare Price Amount (INR)" keyboardType="numeric" value={offerPrice} onChangeText={setOfferPrice} />
+            <View style={{ flexDirection: 'row', gap: 10 }}>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.inputElementHeaderTitleLabel}>Departure Time</Text>
+                <TextInput style={styles.formTextInputField} placeholder="09:00 AM" placeholderTextColor="#9CA3AF" value={offerTime} onChangeText={setOfferTime} />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.inputElementHeaderTitleLabel}>Available Inventory</Text>
+                <TextInput style={styles.formTextInputField} placeholder="Seats" placeholderTextColor="#9CA3AF" keyboardType="numeric" value={offerSeats} onChangeText={setOfferSeats} />
+              </View>
+            </View>
+
+            <Text style={styles.inputElementHeaderTitleLabel}>Carpool Fare Splitting Value (INR)</Text>
+            <TextInput style={styles.formTextInputField} placeholder="150" placeholderTextColor="#9CA3AF" keyboardType="numeric" value={offerPrice} onChangeText={setOfferPrice} />
             
             <View style={styles.toggleConstraintRowLayout}>
-              <Text style={{ fontSize: 14, color: '#374151' }}>Request Silent Commute Route Preference</Text>
-              <Switch value={optSilent} onValueChange={setOptSilent} />
+              <View style={{ flex: 1, paddingRight: 8 }}>
+                <Text style={styles.toggleElementLabelTitleText}>Request Silent Mode Commute</Text>
+                <Text style={styles.toggleElementSubDescriptionHelperText}>No mandatory small talk interaction guidelines enforced.</Text>
+              </View>
+              <Switch value={optSilent} onValueChange={setOptSilent} trackColor={{ false: '#374151', true: '#10B981' }} />
             </View>
 
             <View style={styles.toggleConstraintRowLayout}>
-              <Text style={{ fontSize: 14, color: '#374151' }}>Restrict Visibility to Women Pools Only</Text>
-              <Switch value={optWomenOnly} onValueChange={setOptWomenOnly} />
+              <View style={{ flex: 1, paddingRight: 8 }}>
+                <Text style={styles.toggleElementLabelTitleText}>Restrict Visibility to Women Only</Text>
+                <Text style={styles.toggleElementSubDescriptionHelperText}>Limits map routing search listings visibility safely.</Text>
+              </View>
+              <Switch value={optWomenOnly} onValueChange={setOptWomenOnly} trackColor={{ false: '#374151', true: '#10B981' }} />
             </View>
 
             <TouchableOpacity style={styles.actionExecutionButton} onPress={dispatchOfferSubmission}>
-              <Text style={styles.actionButtonLabelText}>Register Carpool Route</Text>
+              <Text style={styles.actionButtonLabelText}>Broadcast Carpool Route Asset</Text>
             </TouchableOpacity>
           </View>
         )}
@@ -330,58 +397,69 @@ export default function App() {
         {currentScreen === 'FIND' && (
           <View style={{ width: '100%' }}>
             <View style={styles.cardUIElement}>
-              <Text style={styles.sectionHeaderLabelText}>Scan Intersecting Commutes</Text>
+              <Text style={styles.sectionHeaderLabelText}>Query Matching Active Commutes</Text>
               
+              <Text style={styles.inputElementHeaderTitleLabel}>Pickup Point</Text>
               <TextInput 
                 style={styles.formTextInputField} 
-                placeholder="From: Starting location..." 
+                placeholder="Where are you looking for a ride from?" 
+                placeholderTextColor="#9CA3AF"
                 value={searchOrigin} 
                 onFocus={() => setActiveInputContext('SEARCH_ORIGIN')}
                 onChangeText={(t) => triggerLocationSearch(t, 'ORIGIN')} 
               />
               {activeInputContext === 'SEARCH_ORIGIN' && originSuggestions.map((item, i) => (
-                <TouchableOpacity key={i} style={styles.autocompleteSuggestionRowTouch} onPress={() => handleSelectLocation(item.displayName, 'SEARCH_ORIGIN')}>
+                <TouchableOpacity key={i} style={styles.autocompleteSuggestionRowTouch} onPress={() => handleSelectLocation(item, 'SEARCH_ORIGIN')}>
                   <Text style={styles.autocompleteRowLabelText} numberOfLines={1}>📍 {item.displayName}</Text>
                 </TouchableOpacity>
               ))}
 
+              <Text style={styles.inputElementHeaderTitleLabel}>Drop Point Target</Text>
               <TextInput 
                 style={styles.formTextInputField} 
-                placeholder="To: Target workplace or destination..." 
+                placeholder="Where is your target destination office?" 
+                placeholderTextColor="#9CA3AF"
                 value={searchDestination} 
                 onFocus={() => setActiveInputContext('SEARCH_DEST')}
                 onChangeText={(t) => triggerLocationSearch(t, 'DEST')} 
               />
               {activeInputContext === 'SEARCH_DEST' && destSuggestions.map((item, i) => (
-                <TouchableOpacity key={i} style={styles.autocompleteSuggestionRowTouch} onPress={() => handleSelectLocation(item.displayName, 'SEARCH_DEST')}>
+                <TouchableOpacity key={i} style={styles.autocompleteSuggestionRowTouch} onPress={() => handleSelectLocation(item, 'SEARCH_DEST')}>
                   <Text style={styles.autocompleteRowLabelText} numberOfLines={1}>🏁 {item.displayName}</Text>
                 </TouchableOpacity>
               ))}
 
-              <TouchableOpacity style={styles.actionExecutionButton} onPress={executeRouteSearchQuery}>
-                <Text style={styles.actionButtonLabelText}>Scan Active Network Routes</Text>
+              <TouchableOpacity style={[styles.actionExecutionButton, { backgroundColor: '#10B981' }]} onPress={executeRouteSearchQuery}>
+                <Text style={styles.actionButtonLabelText}>Scan Intersecting Grid Metrics</Text>
               </TouchableOpacity>
             </View>
 
+            <Text style={styles.dashboardSectionBreakHeaderLabel}>Available Active Encrypted Routes ({searchResults.length})</Text>
+
             {searchResults.map((ride) => (
               <View key={ride.id} style={styles.matchListingResultCardBox}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between' }}>
-                  <Text style={{ fontWeight: '700', fontSize: 16 }}>{ride.driverName}</Text>
-                  <Text style={{ fontWeight: '700', color: '#10B981', fontSize: 16 }}>₹{ride.price}</Text>
+                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <View>
+                    <Text style={styles.matchCardDriverNameTextText}>{ride.driverName}</Text>
+                    <Text style={styles.matchCardCorporateNetworkLabelText}>Corporate Node: <Text style={{ color: '#10B981', fontWeight: '700' }}>{ride.company}</Text></Text>
+                  </View>
+                  <Text style={styles.matchCardPriceFareLabelText}>₹{ride.price}</Text>
                 </View>
-                <Text style={{ color: '#4B5563', fontSize: 13, marginVertical: 3 }}>
-                  Corporate Verification Node: <Text style={{ fontWeight: '700', color: '#059669' }}>{ride.company}</Text>
-                </Text>
-                <Text style={{ color: '#1F2937', fontSize: 13, marginTop: 2 }}>📍 From: {ride.origin}</Text>
-                <Text style={{ color: '#1F2937', fontSize: 13 }}>🏁 To: {ride.destination}</Text>
-                <Text style={{ fontSize: 13, marginTop: 6, fontWeight: '600', color: '#2563EB' }}>🕒 Leaves: {ride.departureTime} (Route Delta deviation: +{ride.deviationMinutes} mins)</Text>
                 
-                <View style={{ flexDirection: 'row', marginVertical: 8 }}>
-                  {ride.silentRide && <View style={styles.preferenceMetaBadgeContainer}><Text style={styles.preferenceMetaBadgeTextText}>🔇 Silent Mode</Text></View>}
-                  {ride.sharesCorporateNetwork && <View style={[styles.preferenceMetaBadgeContainer, { backgroundColor: '#DBEAFE' }]}><Text style={[styles.preferenceMetaBadgeTextText, { color: '#1E40AF' }]}>🏢 Intracompany Pool</Text></View>}
+                <View style={styles.matchCardRouteTimelineSpliceBorderLayoutContainer}>
+                  <Text style={styles.matchCardRouteAddressDetailsTextLabel} numberOfLines={1}>📍 <Text style={{ fontWeight: '600' }}>From:</Text> {ride.origin}</Text>
+                  <Text style={styles.matchCardRouteAddressDetailsTextLabel} numberOfLines={1}>🏁 <Text style={{ fontWeight: '600' }}>To:</Text> {ride.destination}</Text>
                 </View>
 
-                <TouchableOpacity style={[styles.actionExecutionButton, { marginTop: 8, paddingVertical: 10 }]} onPress={() => processBookingTransaction(ride.id)}>
+                <Text style={styles.departureDeltaLabelTextText}>🕒 Target Window: {ride.departureTime} (Route Delta deviation: {ride.deviationMinutes} mins)</Text>
+                
+                <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginVertical: 10 }}>
+                  {ride.silentRide && <View style={styles.preferenceMetaBadgeContainer}><Text style={styles.preferenceMetaBadgeTextText}>🔇 Silent Request</Text></View>}
+                  {ride.sharesCorporateNetwork && <View style={[styles.preferenceMetaBadgeContainer, { backgroundColor: '#064E3B' }]}><Text style={[styles.preferenceMetaBadgeTextText, { color: '#A7F3D0' }]}>🏢 Shared Cluster Match</Text></View>}
+                  <View style={[styles.preferenceMetaBadgeContainer, { backgroundColor: '#1E293B' }]}><Text style={[styles.preferenceMetaBadgeTextText, { color: '#9CA3AF' }]}>💺 {ride.availableSeats} Available Seats</Text></View>
+                </View>
+
+                <TouchableOpacity style={styles.actionSecureBookingDirectButtonComponent} onPress={() => processBookingTransaction(ride.id)}>
                   <Text style={styles.actionButtonLabelText}>Secure Booking Agreement</Text>
                 </TouchableOpacity>
               </View>
@@ -390,13 +468,20 @@ export default function App() {
         )}
       </ScrollView>
 
+      {/* Footer Navigation Control System */}
       {currentScreen !== 'LOGIN' && currentScreen !== 'OTP_CHECK' && (
         <View style={styles.footerNavigationControlBar}>
-          <TouchableOpacity onPress={() => setCurrentScreen('DASHBOARD')} style={styles.navBarInteractiveControlTab}>
-            <Text style={{ fontWeight: '600', color: '#374151' }}>Dashboard</Text>
+          <TouchableOpacity onPress={() => setCurrentScreen('DASHBOARD')} style={[styles.navBarInteractiveControlTab, currentScreen === 'DASHBOARD' && styles.navBarInteractiveControlTabActive]}>
+            <Text style={[styles.navBarTextLabelStyleElement, currentScreen === 'DASHBOARD' && { color: '#10B981' }]}>Dashboard</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => { setCurrentResults([]); setCurrentScreen('FIND'); }} style={[styles.navBarInteractiveControlTab, currentScreen === 'FIND' && styles.navBarInteractiveControlTabActive]}>
+            <Text style={[styles.navBarTextLabelStyleElement, currentScreen === 'FIND' && { color: '#10B981' }]}>Find Rides</Text>
+          </TouchableOpacity>
+          <TouchableOpacity onPress={() => setCurrentScreen('OFFER')} style={[styles.navBarInteractiveControlTab, currentScreen === 'OFFER' && styles.navBarInteractiveControlTabActive]}>
+            <Text style={[styles.navBarTextLabelStyleElement, currentScreen === 'OFFER' && { color: '#10B981' }]}>Offer Ride</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => { setCurrentUser(null); setCurrentScreen('LOGIN'); }} style={styles.navBarInteractiveControlTab}>
-            <Text style={{ color: '#EF4444', fontWeight: '600' }}>Disconnect</Text>
+            <Text style={[styles.navBarTextLabelStyleElement, { color: '#EF4444' }]}>Exit Grid</Text>
           </TouchableOpacity>
         </View>
       )}
@@ -405,29 +490,56 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
-  appContainer: { flex: 1, backgroundColor: '#F3F4F6' },
-  appHeader: { height: 60, paddingHorizontal: 16, borderBottomWidth: 1, borderBottomColor: '#E5E7EB', backgroundColor: '#fff', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
-  brandTitleText: { fontSize: 22, fontWeight: '900', color: '#111827', letterSpacing: 1 },
-  userBadgeText: { fontSize: 12, fontWeight: '700', color: '#374151', backgroundColor: '#E5E7EB', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 20 },
-  screenScrollLayout: { padding: 16, alignItems: 'center' },
-  cardUIElement: { width: '100%', backgroundColor: '#fff', padding: 20, borderRadius: 16, borderWidth: 1, borderColor: '#E5E7EB', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.05, shadowRadius: 8, marginBottom: 16 },
-  sectionHeaderLabelText: { fontSize: 20, fontWeight: '800', color: '#111827', marginBottom: 6 },
-  supportingHelperBodyText: { fontSize: 13, color: '#4B5563', marginBottom: 16, lineHeight: 18 },
-  debugTerminalCodeHint: { backgroundColor: '#FEF3C7', color: '#92400E', padding: 10, borderRadius: 8, fontSize: 12, fontWeight: '600', marginBottom: 12, borderWidth: 1, borderColor: '#FDE68A' },
-  formTextInputField: { width: '100%', height: 46, borderWidth: 1, borderColor: '#D1D5DB', borderRadius: 10, paddingHorizontal: 14, marginBottom: 12, backgroundColor: '#FAFAFA', fontSize: 14 },
-  autocompleteSuggestionRowTouch: { width: '100%', paddingVertical: 10, paddingHorizontal: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6', backgroundColor: '#F9FAFB' },
-  autocompleteRowLabelText: { fontSize: 13, color: '#374151' },
-  genderSelectChipTab: { paddingVertical: 10, paddingHorizontal: 20, borderRadius: 24, borderWidth: 1, borderColor: '#D1D5DB' },
-  genderSelectChipTabSelected: { backgroundColor: '#111827', borderColor: '#111827' },
-  chipTextSelected: { color: '#fff', fontWeight: '700', fontSize: 13 },
-  chipTextUnselected: { color: '#4B5563', fontSize: 13 },
-  actionExecutionButton: { width: '100%', backgroundColor: '#111827', paddingVertical: 14, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
-  actionButtonLabelText: { color: '#fff', fontWeight: '700', fontSize: 14 },
-  greenMetricImpactContainerBox: { width: '100%', backgroundColor: '#064E3B', padding: 22, borderRadius: 16 },
-  toggleConstraintRowLayout: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', paddingVertical: 12, borderBottomWidth: 1, borderBottomColor: '#F3F4F6', marginBottom: 14 },
-  matchListingResultCardBox: { width: '100%', backgroundColor: '#fff', padding: 18, borderRadius: 16, borderLeftWidth: 5, borderLeftColor: '#10B981', marginBottom: 14, borderWidth: 1, borderColor: '#E5E7EB' },
-  preferenceMetaBadgeContainer: { backgroundColor: '#E5E7EB', paddingHorizontal: 10, paddingVertical: 5, borderRadius: 6, marginRight: 8 },
-  preferenceMetaBadgeTextText: { fontSize: 11, fontWeight: '600', color: '#1F2937' },
-  footerNavigationControlBar: { height: 65, borderTopWidth: 1, borderTopColor: '#E5E7EB', backgroundColor: '#fff', flexDirection: 'row', width: '100%' },
-  navBarInteractiveControlTab: { flex: 1, alignItems: 'center', justifyContent: 'center' }
+  appContainer: { flex: 1, backgroundColor: '#0B0F19' },
+  appHeader: { height: 70, paddingHorizontal: 20, borderBottomWidth: 1, borderBottomColor: '#1E293B', backgroundColor: '#111827', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' },
+  logoBadgeEmoji: { fontSize: 24, marginRight: 10 },
+  brandTitleText: { fontSize: 20, fontWeight: '900', color: '#fff', letterSpacing: 1.5 },
+  subBrandTagline: { fontSize: 10, color: '#9CA3AF', fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
+  userProfilePillBadge: { alignItems: 'flex-end', backgroundColor: '#1E293B', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12, borderWidth: 1, borderColor: '#334155' },
+  userBadgeTextText: { fontSize: 12, fontWeight: '700', color: '#fff' },
+  companySubLabel: { fontSize: 9, fontWeight: '800', color: '#10B981' },
+  systemGlobalLoaderTrack: { position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, backgroundColor: 'rgba(11,15,25,0.7)', zIndex: 999, justifyContent: 'center', alignItems: 'center' },
+  screenScrollLayout: { padding: 20, alignItems: 'center' },
+  cardUIElement: { width: '100%', backgroundColor: '#111827', padding: 24, borderRadius: 20, borderWidth: 1, borderColor: '#1E293B', marginBottom: 20 },
+  sectionHeaderLabelText: { fontSize: 22, fontWeight: '800', color: '#fff', marginBottom: 8, letterSpacing: -0.3 },
+  supportingHelperBodyText: { fontSize: 13, color: '#9CA3AF', marginBottom: 20, lineHeight: 19 },
+  inputElementHeaderTitleLabel: { fontSize: 12, fontWeight: '700', color: '#9CA3AF', marginBottom: 6, textTransform: 'uppercase', letterSpacing: 0.5 },
+  formTextInputField: { width: '100%', height: 48, borderWidth: 1, borderColor: '#1E293B', borderRadius: 12, paddingHorizontal: 16, marginBottom: 16, backgroundColor: '#1E293B', fontSize: 14, color: '#fff' },
+  otpCenterInputTextAlignment: { textAlign: 'center', fontSize: 24, fontWeight: '800', letterSpacing: 8, color: '#10B981', height: 60 },
+  autocompleteSuggestionRowTouch: { width: '100%', paddingVertical: 12, paddingHorizontal: 14, borderBottomWidth: 1, borderBottomColor: '#1E293B', backgroundColor: '#1F2937', borderRadius: 8, marginBottom: 4 },
+  autocompleteRowLabelText: { fontSize: 13, color: '#E5E7EB' },
+  segmentedTabContainerGroupRow: { flexDirection: 'row', gap: 10, marginVertical: 14, width: '100%' },
+  genderSelectChipTab: { flex: 1, paddingVertical: 12, borderRadius: 12, borderWidth: 1, borderColor: '#1E293B', backgroundColor: '#1E293B', alignItems: 'center' },
+  genderSelectChipTabSelected: { backgroundColor: '#10B981', borderColor: '#10B981' },
+  chipTextSelected: { color: '#fff', fontWeight: '800', fontSize: 13 },
+  chipTextUnselected: { color: '#9CA3AF', fontSize: 13, fontWeight: '600' },
+  actionExecutionButton: { width: '100%', backgroundColor: '#10B981', paddingVertical: 16, borderRadius: 12, alignItems: 'center', justifyContent: 'center', marginTop: 8 },
+  actionButtonLabelText: { color: '#fff', fontWeight: '800', fontSize: 14, letterSpacing: 0.3 },
+  debugTerminalCodeHint: { backgroundColor: 'rgba(245,158,11,0.1)', padding: 12, borderRadius: 12, marginBottom: 16, borderWidth: 1, borderColor: 'rgba(245,158,11,0.3)' },
+  debugTokenLabelTextText: { color: '#F59E0B', fontSize: 13, fontWeight: '700', textAlign: 'center' },
+  greenMetricImpactContainerBox: { width: '100%', backgroundColor: '#065F46', padding: 24, borderRadius: 24, borderWidth: 1, borderColor: '#047857' },
+  activeVerifiedStatusBadgeMarkerText: { fontSize: 10, fontWeight: '800', color: '#A7F3D0', backgroundColor: '#047857', paddingHorizontal: 8, paddingVertical: 4, borderRadius: 8 },
+  dashboardSectionBreakHeaderLabel: { width: '100%', fontSize: 14, fontWeight: '800', color: '#9CA3AF', marginTop: 24, marginBottom: 14, textTransform: 'uppercase', letterSpacing: 0.8 },
+  dashboardActionButtonsGroupContainer: { flexDirection: 'row', gap: 14, width: '100%' },
+  dashboardActionBigFunctionalMenuCardButton: { flex: 1, backgroundColor: '#10B981', padding: 20, borderRadius: 20, minHeight: 150, justifyContent: 'space-between' },
+  bigCardFunctionalMenuIconButtonEmoji: { fontSize: 28 },
+  bigCardMainActionButtonTextLabel: { fontSize: 16, fontWeight: '800', color: '#fff', marginTop: 12 },
+  bigCardSubDescriptionHelperText: { fontSize: 11, color: 'rgba(255,255,255,0.7)', marginTop: 4, lineHeight: 14 },
+  toggleConstraintRowLayout: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', width: '100%', paddingVertical: 14, borderBottomWidth: 1, borderBottomColor: '#1E293B', marginBottom: 8 },
+  toggleElementLabelTitleText: { fontSize: 14, fontWeight: '700', color: '#fff' },
+  toggleElementSubDescriptionHelperText: { fontSize: 11, color: '#9CA3AF', marginTop: 2 },
+  matchListingResultCardBox: { width: '100%', backgroundColor: '#111827', padding: 20, borderRadius: 20, borderWidth: 1, borderColor: '#1E293B', marginBottom: 16 },
+  matchCardDriverNameTextText: { fontWeight: '800', fontSize: 18, color: '#fff' },
+  matchCardCorporateNetworkLabelText: { color: '#9CA3AF', fontSize: 12, marginTop: 2 },
+  matchCardPriceFareLabelText: { fontWeight: '900', color: '#10B981', fontSize: 20 },
+  matchCardRouteTimelineSpliceBorderLayoutContainer: { marginVertical: 12, paddingLeft: 12, borderLeftWidth: 2, borderLeftColor: '#334155' },
+  matchCardRouteAddressDetailsTextLabel: { color: '#E5E7EB', fontSize: 13, marginVertical: 3 },
+  departureDeltaLabelTextText: { fontSize: 12, fontWeight: '600', color: '#60A5FA', backgroundColor: 'rgba(96,165,250,0.1)', padding: 8, borderRadius: 8, overflow: 'hidden' },
+  preferenceMetaBadgeContainer: { backgroundColor: '#1E293B', paddingHorizontal: 10, paddingVertical: 6, borderRadius: 8 },
+  preferenceMetaBadgeTextText: { fontSize: 11, fontWeight: '700', color: '#E5E7EB' },
+  actionSecureBookingDirectButtonComponent: { width: '100%', backgroundColor: '#1E293B', paddingVertical: 12, borderRadius: 12, alignItems: 'center', marginTop: 6, borderWidth: 1, borderColor: '#334155' },
+  footerNavigationControlBar: { height: 75, borderTopWidth: 1, borderTopColor: '#1E293B', backgroundColor: '#111827', flexDirection: 'row', width: '100%' },
+  navBarInteractiveControlTab: { flex: 1, alignItems: 'center', justifyContent: 'center', paddingBottom: 10 },
+  navBarInteractiveControlTabActive: { borderTopWidth: 2, borderTopColor: '#10B981' },
+  navBarTextLabelStyleElement: { fontSize: 11, fontWeight: '700', color: '#9CA3AF' }
 });

@@ -11,6 +11,7 @@ import {
   Switch,
   ActivityIndicator
 } from 'react-native';
+import * as Location from 'expo-location';
 
 interface UserSession {
   id: string;
@@ -47,20 +48,21 @@ export default function App() {
   const [currentScreen, setCurrentScreen] = useState<'LOGIN' | 'OTP_CHECK' | 'DASHBOARD' | 'OFFER' | 'FIND'>('LOGIN');
   const [currentUser, setCurrentUser] = useState<UserSession | null>(null);
   const [globalLoading, setGlobalLoading] = useState(false);
+  const [userCountryCode, setUserCountryCode] = useState<string>('');
 
-  // Authentication states
+  // Authentication Data States
   const [loginEmail, setLoginEmail] = useState('');
   const [loginName, setLoginName] = useState('');
   const [loginGender, setLoginGender] = useState('female');
   const [enteredOtp, setEnteredOtp] = useState('');
   const [debugCodeHint, setDebugCodeHint] = useState('');
 
-  // Dropdown Autocomplete suggestion states
+  // Dropdown Location Search Autocomplete Suggestions States
   const [originSuggestions, setOriginSuggestions] = useState<SpatialSuggestion[]>([]);
   const [destSuggestions, setDestSuggestions] = useState<SpatialSuggestion[]>([]);
   const [activeInputContext, setActiveInputContext] = useState<'OFFER_ORIGIN' | 'OFFER_DEST' | 'SEARCH_ORIGIN' | 'SEARCH_DEST' | null>(null);
 
-  // Offer parameters
+  // Form Parameters for Commute Creation
   const [offerOrigin, setOfferOrigin] = useState('');
   const [offerDestination, setOfferDestination] = useState('');
   const [offerTime, setOfferTime] = useState('');
@@ -69,13 +71,42 @@ export default function App() {
   const [optSilent, setOptSilent] = useState(false);
   const [optWomenOnly, setOptWomenOnly] = useState(false);
 
-  // Search variables
+  // Form Parameters for Ride Search
   const [searchOrigin, setSearchOrigin] = useState('');
   const [searchDestination, setSearchDestination] = useState('');
   const [searchResults, setSearchResults] = useState<RideMatch[]>([]);
 
   const API_URL = 'http://localhost:3000/api';
 
+  /**
+   * Requests device foreground permissions to automatically localize autocomplete lookups
+   */
+  const requestDeviceLocation = async () => {
+    try {
+      let { status } = await Location.requestForegroundPermissionsAsync();
+      if (status !== 'granted') {
+        console.log('Location permissions rejected. Operating in global fallback mode.');
+        return;
+      }
+
+      let location = await Location.getCurrentPositionAsync({});
+      let geocode = await Location.reverseGeocodeAsync({
+        latitude: location.coords.latitude,
+        longitude: location.coords.longitude
+      });
+
+      if (geocode.length > 0 && geocode[0].isoCountryCode) {
+        setUserCountryCode(geocode[0].isoCountryCode.toLowerCase());
+        console.log(`System localized context to country: ${geocode[0].isoCountryCode}`);
+      }
+    } catch (error) {
+      console.log('GPS tracking sequence failed to load.');
+    }
+  };
+
+  /**
+   * Fires the geocoding fetch request bound to the current localized country
+   */
   const triggerLocationSearch = async (text: string, context: 'ORIGIN' | 'DEST') => {
     if (context === 'ORIGIN') {
       if (activeInputContext === 'OFFER_ORIGIN') setOfferOrigin(text);
@@ -92,12 +123,12 @@ export default function App() {
     }
 
     try {
-      const response = await fetch(`${API_URL}/location/autocomplete?query=${encodeURIComponent(text)}`);
+      const response = await fetch(`${API_URL}/location/autocomplete?query=${encodeURIComponent(text)}&country=${userCountryCode}`);
       const data = await response.json();
       if (context === 'ORIGIN') setOriginSuggestions(data.suggestions || []);
       if (context === 'DEST') setDestSuggestions(data.suggestions || []);
     } catch {
-      console.log('Map server unreachable.');
+      console.log('Map integration server cluster currently offline.');
     }
   };
 
@@ -114,7 +145,7 @@ export default function App() {
 
   const handleCorporateHandshake = async () => {
     if (!loginEmail || !loginName) {
-      Alert.alert('Action Required', 'Please supply your operational name and corporate network address.');
+      Alert.alert('Details Required', 'Please fill out your identity parameters before connecting.');
       return;
     }
     setGlobalLoading(true);
@@ -130,7 +161,7 @@ export default function App() {
       setDebugCodeHint(data.debugOtpConfirmationCode || '');
       setCurrentScreen('OTP_CHECK');
     } catch (err: any) {
-      Alert.alert('Access Error', err.message || 'Verification initialization rejected.');
+      Alert.alert('Handshake Failed', err.message || 'Authorization rejected by server.');
     } finally {
       setGlobalLoading(false);
     }
@@ -150,8 +181,11 @@ export default function App() {
 
       setCurrentUser(data.user);
       setCurrentScreen('DASHBOARD');
+      
+      // Prompts permission checks immediately following verified dashboard execution
+      requestDeviceLocation();
     } catch (err: any) {
-      Alert.alert('Token Invalid', err.message || 'OTP check handshake failure.');
+      Alert.alert('Validation Error', err.message || 'Invalid passcode configuration entry.');
     } finally {
       setGlobalLoading(false);
     }
@@ -159,7 +193,7 @@ export default function App() {
 
   const dispatchOfferSubmission = async () => {
     if (!offerOrigin || !offerDestination || !offerTime) {
-      Alert.alert('Details Missing', 'Please pin valid start and end path points.');
+      Alert.alert('Incomplete Fields', 'Please select valid start and end layout bounds.');
       return;
     }
     setGlobalLoading(true);
@@ -179,12 +213,11 @@ export default function App() {
         })
       });
       if (!response.ok) throw new Error();
-      Alert.alert('Route Registered', 'Your pool route has been successfully mapped out.');
+      Alert.alert('Route Registered', 'Your ride route asset is now live across the enterprise network cluster.');
       setCurrentScreen('DASHBOARD');
-      // Reset inputs
       setOfferOrigin(''); setOfferDestination(''); setOfferTime('');
     } catch {
-      Alert.alert('Error', 'Failed to upload route criteria metrics.');
+      Alert.alert('Upload Error', 'Failed to synchronize route configuration vectors.');
     } finally {
       setGlobalLoading(false);
     }
@@ -199,7 +232,7 @@ export default function App() {
       const data = await response.json();
       setSearchResults(data.rides || []);
     } catch {
-      Alert.alert('Search Offline', 'Could not index matching paths.');
+      Alert.alert('Index Failure', 'Could not fetch active matching routes.');
     } finally {
       setGlobalLoading(false);
     }
@@ -216,10 +249,10 @@ export default function App() {
       const data = await response.json();
       if (!response.ok) throw new Error(data.error);
       
-      Alert.alert('Pact Confirmed!', `Seat reserved safely. Boarding Code: ${data.booking.verificationPasscode}`);
+      Alert.alert('Booking Secured!', `Your seat is fully confirmed. Security Boarding Code: ${data.booking.verificationPasscode}`);
       setCurrentScreen('DASHBOARD');
     } catch (err: any) {
-      Alert.alert('Booking Error', err.message || 'Transaction could not be initialized.');
+      Alert.alert('Booking Aborted', err.message || 'Transaction handling exception thrown.');
     } finally {
       setGlobalLoading(false);
     }
@@ -227,7 +260,7 @@ export default function App() {
 
   return (
     <SafeAreaView style={styles.appContainer}>
-      {/* Top Banner Navigation Header */}
+      {/* Upper Navigation Mesh Header */}
       <View style={styles.appHeader}>
         <View style={{ flexDirection: 'row', alignItems: 'center' }}>
           <Text style={styles.logoBadgeEmoji}>🤝</Text>
@@ -244,7 +277,7 @@ export default function App() {
         )}
       </View>
 
-      {/* Global Activity Loader */}
+      {/* Full-Screen Functional Mask Loader */}
       {globalLoading && (
         <View style={styles.systemGlobalLoaderTrack}>
           <ActivityIndicator size="large" color="#10B981" />
@@ -255,18 +288,18 @@ export default function App() {
         {currentScreen === 'LOGIN' && (
           <View style={styles.cardUIElement}>
             <Text style={styles.sectionHeaderLabelText}>Corporate Identity Authentication</Text>
-            <Text style={styles.supportingHelperBodyText}>Access verification requires a valid, corporate enterprise email address.</Text>
+            <Text style={styles.supportingHelperBodyText}>Access verification requires an authentic, enterprise corporate email handle match structure.</Text>
             
-            <Text style={styles.inputElementHeaderTitleLabel}>Legal Full Name</Text>
-            <TextInput style={styles.formTextInputField} placeholder="e.g. Ramesh Kumar" placeholderTextColor="#9CA3AF" value={loginName} onChangeText={setLoginName} />
+            <Text style={styles.inputElementHeaderTitleLabel}>Full Professional Name</Text>
+            <TextInput style={styles.formTextInputField} placeholder="e.g. Alok Sharma" placeholderTextColor="#9CA3AF" value={loginName} onChangeText={setLoginName} />
             
             <Text style={styles.inputElementHeaderTitleLabel}>Enterprise Email Domain Address</Text>
-            <TextInput style={styles.formTextInputField} placeholder="e.g. ramesh@google.com" placeholderTextColor="#9CA3AF" value={loginEmail} onChangeText={setLoginEmail} autoCapitalize="none" keyboardType="email-address" />
+            <TextInput style={styles.formTextInputField} placeholder="e.g. alok@microsoft.com" placeholderTextColor="#9CA3AF" value={loginEmail} onChangeText={setLoginEmail} autoCapitalize="none" keyboardType="email-address" />
             
-            <Text style={styles.inputElementHeaderTitleLabel}>Select Profile Verification Track</Text>
+            <Text style={styles.inputElementHeaderTitleLabel}>Select Identity Route Profile Track</Text>
             <View style={styles.segmentedTabContainerGroupRow}>
               <TouchableOpacity style={[styles.genderSelectChipTab, loginGender === 'female' && styles.genderSelectChipTabSelected]} onPress={() => setLoginGender('female')}>
-                <Text style={loginGender === 'female' ? styles.chipTextSelected : styles.chipTextUnselected}>Female Route Preference</Text>
+                <Text style={loginGender === 'female' ? styles.chipTextSelected : styles.chipTextUnselected}>Female Preference Route</Text>
               </TouchableOpacity>
               <TouchableOpacity style={[styles.genderSelectChipTab, loginGender === 'male' && styles.genderSelectChipTabSelected]} onPress={() => setLoginGender('male')}>
                 <Text style={loginGender === 'male' ? styles.chipTextSelected : styles.chipTextUnselected}>Standard General Route</Text>
@@ -282,9 +315,9 @@ export default function App() {
         {currentScreen === 'OTP_CHECK' && (
           <View style={styles.cardUIElement}>
             <Text style={styles.sectionHeaderLabelText}>Verify Security Token</Text>
-            <Text style={styles.supportingHelperBodyText}>A security token payload handshake has been executed and logged inside the backend cluster module window.</Text>
+            <Text style={styles.supportingHelperBodyText}>A verification matrix code payload was transferred and logged directly inside your backend terminal console.</Text>
             
-            {debugCodeHint ? <View style={styles.debugTerminalCodeHint}><Text style={styles.debugTokenLabelTextText}>Bypass Pin: {debugCodeHint}</Text></View> : null}
+            {debugCodeHint ? <View style={styles.debugTerminalCodeHint}><Text style={styles.debugTokenLabelTextText}>Bypass Code Hint: {debugCodeHint}</Text></View> : null}
             
             <Text style={styles.inputElementHeaderTitleLabel}>Enter 4-Digit Verification Key</Text>
             <TextInput style={[styles.formTextInputField, styles.otpCenterInputTextAlignment]} placeholder="0 0 0 0" placeholderTextColor="#6B7280" keyboardType="numeric" maxLength={4} value={enteredOtp} onChangeText={setEnteredOtp} />
@@ -306,7 +339,7 @@ export default function App() {
               <Text style={{ color: '#A7F3D0', fontSize: 13, fontWeight: '500' }}>Carbon Catalyst Tier Level: Silver Core</Text>
             </View>
 
-            <Text style={styles.dashboardSectionBreakHeaderLabel}>Network Action Routing Panels</Text>
+            <Text style={styles.dashboardSectionBreakHeaderLabel}>Network Action Panels</Text>
             <View style={styles.dashboardActionButtonsGroupContainer}>
               <TouchableOpacity style={styles.dashboardActionBigFunctionalMenuCardButton} onPress={() => { setSearchResults([]); setCurrentScreen('FIND'); }}>
                 <Text style={styles.bigCardFunctionalMenuIconButtonEmoji}>🔍</Text>
@@ -317,7 +350,7 @@ export default function App() {
               <TouchableOpacity style={[styles.dashboardActionBigFunctionalMenuCardButton, { backgroundColor: '#1E293B' }]} onPress={() => setCurrentScreen('OFFER')}>
                 <Text style={styles.bigCardFunctionalMenuIconButtonEmoji}>🚗</Text>
                 <Text style={styles.bigCardMainActionButtonTextLabel}>Offer Commute</Text>
-                <Text style={styles.bigCardSubDescriptionHelperText}>Publish active available empty vehicle inventory</Text>
+                <Text style={styles.bigCardSubDescriptionHelperText}>Publish active empty space inventory assets</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -326,12 +359,12 @@ export default function App() {
         {currentScreen === 'OFFER' && (
           <View style={styles.cardUIElement}>
             <Text style={styles.sectionHeaderLabelText}>Publish Active Pool Route</Text>
-            <Text style={styles.supportingHelperBodyText}>Configure route bounds. System autocompletion scans Indian city data maps dynamically.</Text>
+            <Text style={styles.supportingHelperBodyText}>Configure setup coordinates. System scans localized mapping indices based on device settings.</Text>
             
             <Text style={styles.inputElementHeaderTitleLabel}>Departure Origin Station Point</Text>
             <TextInput 
               style={styles.formTextInputField} 
-              placeholder="e.g. Provident Kenworth..." 
+              placeholder="Search apartment, office complex, or street..." 
               placeholderTextColor="#9CA3AF"
               value={offerOrigin} 
               onFocus={() => setActiveInputContext('OFFER_ORIGIN')}
@@ -346,7 +379,7 @@ export default function App() {
             <Text style={styles.inputElementHeaderTitleLabel}>Target Destination Base Terminal</Text>
             <TextInput 
               style={styles.formTextInputField} 
-              placeholder="e.g. Gachibowli Tech Park..." 
+              placeholder="Search destination IT hub, campus, or zone..." 
               placeholderTextColor="#9CA3AF"
               value={offerDestination} 
               onFocus={() => setActiveInputContext('OFFER_DEST')}
@@ -361,21 +394,21 @@ export default function App() {
             <View style={{ flexDirection: 'row', gap: 10 }}>
               <View style={{ flex: 1 }}>
                 <Text style={styles.inputElementHeaderTitleLabel}>Departure Time</Text>
-                <TextInput style={styles.formTextInputField} placeholder="09:00 AM" placeholderTextColor="#9CA3AF" value={offerTime} onChangeText={setOfferTime} />
+                <TextInput style={styles.formTextInputField} placeholder="08:30 AM" placeholderTextColor="#9CA3AF" value={offerTime} onChangeText={setOfferTime} />
               </View>
               <View style={{ flex: 1 }}>
-                <Text style={styles.inputElementHeaderTitleLabel}>Available Inventory</Text>
+                <Text style={styles.inputElementHeaderTitleLabel}>Available Space</Text>
                 <TextInput style={styles.formTextInputField} placeholder="Seats" placeholderTextColor="#9CA3AF" keyboardType="numeric" value={offerSeats} onChangeText={setOfferSeats} />
               </View>
             </View>
 
-            <Text style={styles.inputElementHeaderTitleLabel}>Carpool Fare Splitting Value (INR)</Text>
+            <Text style={styles.inputElementHeaderTitleLabel}>Carpool Fare Splitting Vector Value (INR)</Text>
             <TextInput style={styles.formTextInputField} placeholder="150" placeholderTextColor="#9CA3AF" keyboardType="numeric" value={offerPrice} onChangeText={setOfferPrice} />
             
             <View style={styles.toggleConstraintRowLayout}>
               <View style={{ flex: 1, paddingRight: 8 }}>
                 <Text style={styles.toggleElementLabelTitleText}>Request Silent Mode Commute</Text>
-                <Text style={styles.toggleElementSubDescriptionHelperText}>No mandatory small talk interaction guidelines enforced.</Text>
+                <Text style={styles.toggleElementSubDescriptionHelperText}>No mandatory social small talk parameters enforced.</Text>
               </View>
               <Switch value={optSilent} onValueChange={setOptSilent} trackColor={{ false: '#374151', true: '#10B981' }} />
             </View>
@@ -383,7 +416,7 @@ export default function App() {
             <View style={styles.toggleConstraintRowLayout}>
               <View style={{ flex: 1, paddingRight: 8 }}>
                 <Text style={styles.toggleElementLabelTitleText}>Restrict Visibility to Women Only</Text>
-                <Text style={styles.toggleElementSubDescriptionHelperText}>Limits map routing search listings visibility safely.</Text>
+                <Text style={styles.toggleElementSubDescriptionHelperText}>Restricts query lookup responses safely to verified female network profiles.</Text>
               </View>
               <Switch value={optWomenOnly} onValueChange={setOptWomenOnly} trackColor={{ false: '#374151', true: '#10B981' }} />
             </View>
@@ -399,10 +432,10 @@ export default function App() {
             <View style={styles.cardUIElement}>
               <Text style={styles.sectionHeaderLabelText}>Query Matching Active Commutes</Text>
               
-              <Text style={styles.inputElementHeaderTitleLabel}>Pickup Point</Text>
+              <Text style={styles.inputElementHeaderTitleLabel}>Pickup Station Vector</Text>
               <TextInput 
                 style={styles.formTextInputField} 
-                placeholder="Where are you looking for a ride from?" 
+                placeholder="Where are you commuting from?" 
                 placeholderTextColor="#9CA3AF"
                 value={searchOrigin} 
                 onFocus={() => setActiveInputContext('SEARCH_ORIGIN')}
@@ -414,10 +447,10 @@ export default function App() {
                 </TouchableOpacity>
               ))}
 
-              <Text style={styles.inputElementHeaderTitleLabel}>Drop Point Target</Text>
+              <Text style={styles.inputElementHeaderTitleLabel}>Drop Terminal Target</Text>
               <TextInput 
                 style={styles.formTextInputField} 
-                placeholder="Where is your target destination office?" 
+                placeholder="Where is your target workspace station?" 
                 placeholderTextColor="#9CA3AF"
                 value={searchDestination} 
                 onFocus={() => setActiveInputContext('SEARCH_DEST')}
@@ -434,7 +467,7 @@ export default function App() {
               </TouchableOpacity>
             </View>
 
-            <Text style={styles.dashboardSectionBreakHeaderLabel}>Available Active Encrypted Routes ({searchResults.length})</Text>
+            <Text style={styles.dashboardSectionBreakHeaderLabel}>Available Encrypted Grid Matches ({searchResults.length})</Text>
 
             {searchResults.map((ride) => (
               <View key={ride.id} style={styles.matchListingResultCardBox}>
@@ -451,7 +484,7 @@ export default function App() {
                   <Text style={styles.matchCardRouteAddressDetailsTextLabel} numberOfLines={1}>🏁 <Text style={{ fontWeight: '600' }}>To:</Text> {ride.destination}</Text>
                 </View>
 
-                <Text style={styles.departureDeltaLabelTextText}>🕒 Target Window: {ride.departureTime} (Route Delta deviation: {ride.deviationMinutes} mins)</Text>
+                <Text style={styles.departureDeltaLabelTextText}>🕒 Window: {ride.departureTime} (Route Delta: {ride.deviationMinutes} mins)</Text>
                 
                 <View style={{ flexDirection: 'row', flexWrap: 'wrap', gap: 6, marginVertical: 10 }}>
                   {ride.silentRide && <View style={styles.preferenceMetaBadgeContainer}><Text style={styles.preferenceMetaBadgeTextText}>🔇 Silent Request</Text></View>}
@@ -468,13 +501,13 @@ export default function App() {
         )}
       </ScrollView>
 
-      {/* Footer Navigation Control System */}
+      {/* Footer System Navigation Dock */}
       {currentScreen !== 'LOGIN' && currentScreen !== 'OTP_CHECK' && (
         <View style={styles.footerNavigationControlBar}>
           <TouchableOpacity onPress={() => setCurrentScreen('DASHBOARD')} style={[styles.navBarInteractiveControlTab, currentScreen === 'DASHBOARD' && styles.navBarInteractiveControlTabActive]}>
             <Text style={[styles.navBarTextLabelStyleElement, currentScreen === 'DASHBOARD' && { color: '#10B981' }]}>Dashboard</Text>
           </TouchableOpacity>
-          <TouchableOpacity onPress={() => { setCurrentResults([]); setCurrentScreen('FIND'); }} style={[styles.navBarInteractiveControlTab, currentScreen === 'FIND' && styles.navBarInteractiveControlTabActive]}>
+          <TouchableOpacity onPress={() => { setSearchResults([]); setCurrentScreen('FIND'); }} style={[styles.navBarInteractiveControlTab, currentScreen === 'FIND' && styles.navBarInteractiveControlTabActive]}>
             <Text style={[styles.navBarTextLabelStyleElement, currentScreen === 'FIND' && { color: '#10B981' }]}>Find Rides</Text>
           </TouchableOpacity>
           <TouchableOpacity onPress={() => setCurrentScreen('OFFER')} style={[styles.navBarInteractiveControlTab, currentScreen === 'OFFER' && styles.navBarInteractiveControlTabActive]}>

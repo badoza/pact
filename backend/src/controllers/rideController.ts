@@ -94,7 +94,7 @@ export const fetchLocationSuggestions = async (req: Request, res: Response): Pro
       `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query as string)}&limit=5`,
       { headers: { 'User-Agent': 'PactCarpoolEnterpriseAppEngine/1.0.0' } }
     );
-    const elements = await mapResponse.json();
+    const elements = (await mapResponse.json()) as any[];
     
     const structuredSuggestions = elements.map((item: any) => ({
       displayName: item.display_name,
